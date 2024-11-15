@@ -152,6 +152,7 @@ app.post('/api/runPython', (req, res) => {
   if (!company1 || !company2 || !company3 || !totalInvestment || !risk) {
     return res.status(400).send('모든 파라미터가 필요합니다.');
   }
+  console.log("###########2 : ", company1, company2, company3, totalInvestment, risk);
 
   // Python 스크립트 실행
   const pythonProcess = spawn('python', ['a.py', company1, company2, company3, totalInvestment, risk]);
@@ -164,6 +165,7 @@ app.post('/api/runPython', (req, res) => {
   pythonProcess.stdout.on('data', (data) => {
     output += data.toString();
   });
+
 
   // 에러 처리
   pythonProcess.stderr.on('data', (data) => {
@@ -196,17 +198,16 @@ function parsePythonOutput(output) {
   const totalMatch = output.match(totalRegex);
   const rfMatch = output.match(rfRegex);
 
-  if (totalMatch) result.total = parseInt(totalMatch[1].replace(',', ''));
-  if (rfMatch) result.rf = parseInt(rfMatch[1].replace(',', ''));
+  if (totalMatch) result.total = parseInt(totalMatch[1].replace(/,/g, ''));
+  if (rfMatch) result.rf = parseInt(rfMatch[1].replace(/,/g, ''));
 
-  // 회사별 투자 금액 추출
   let match;
   while ((match = regex.exec(output)) !== null) {
     const companyName = match[1].trim();
-    const investmentAmount = parseInt(match[2].replace(',', ''));
+    const investmentAmount = parseInt(match[2].replace(/,/g, '')); // 쉼표 제거
     result[companyName] = investmentAmount;
   }
-
+  
   return result;
 }
 
