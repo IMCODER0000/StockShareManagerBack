@@ -3,11 +3,14 @@ const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const iconv = require('iconv-lite');
+const yahooFinance = require('yahoo-finance2').default;
+const { spawn } = require('child_process');
 const cors = require('cors');
 const app = express();
 const PORT = 4000;
 
 app.use(cors()); 
+app.use(express.json());
 
 // 시가총액 문자열을 숫자로 변환하는 함수
 function parseMarketCap(marketCapStr) {
@@ -78,6 +81,174 @@ app.get('/api/stocks', async (req, res) => {
     res.status(500).send('Error fetching stock data');
   }
 });
+
+app.get('/api/stocks/:ticker/history', async (req, res) => {
+  const ticker = req.params.ticker; // 종목 코드
+
+  try {
+    // 현재 날짜
+    const endDate = new Date();
+    // 5년 전 날짜
+    const startDate = new Date();
+    startDate.setFullYear(endDate.getFullYear() - 5);
+
+    // Unix Timestamp로 변환
+    const period1 = Math.floor(startDate.getTime() / 1000);
+    const period2 = Math.floor(endDate.getTime() / 1000);
+
+    // `chart` 메서드 사용
+    const options = {
+      period1,
+      period2,
+      interval: '3mo', // 1개월 간격 데이터
+    };
+
+    const data = await yahooFinance.chart(ticker, options);
+
+    res.json(data);
+    console.log(`Data for ticker ${ticker} fetched successfully`);
+  } catch (error) {
+    console.error('Error fetching historical stock data:', error.message);
+    res.status(500).send('Error fetching historical stock data');
+  }
+});
+
+
+app.get('/api/stocks/:ticker/history2', async (req, res) => {
+  const ticker = req.params.ticker; // 종목 코드
+
+  try {
+    // 현재 날짜
+    const endDate = new Date();
+    // 7일 전 날짜
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - 7); // 7일 전 날짜로 설정
+
+    // Unix Timestamp로 변환
+    const period1 = Math.floor(startDate.getTime() / 1000);
+    const period2 = Math.floor(endDate.getTime() / 1000);
+
+    // `chart` 메서드 사용
+    const options = {
+      period1,
+      period2,
+      interval: '1d', // 1일 간격 데이터
+    };
+
+    const data = await yahooFinance.chart(ticker, options);
+
+    res.json(data);
+    console.log(`Data for ticker ${ticker} fetched successfully`);
+  } catch (error) {
+    console.error('Error fetching historical stock data:', error.message);
+    res.status(500).send('Error fetching historical stock data');
+  }
+});
+
+
+app.post('/api/runPython', (req, res) => {
+  const { company1, company2, company3, totalInvestment, risk } = req.body;
+
+  if (!company1 || !company2 || !company3 || !totalInvestment || !risk) {
+    return res.status(400).send('모든 파라미터가 필요합니다.');
+  }
+
+  // Python 스크립트 실행
+  const pythonProcess = spawn('python', ['a.py', company1, company2, company3, totalInvestment, risk]);
+
+  console.log("########### : ", 'python', ['a.py', company1, company2, company3, totalInvestment, risk])
+
+  let output = '';
+
+  // Python 스크립트 출력 처리
+  pythonProcess.stdout.on('data', (data) => {
+    output += data.toString();
+  });
+
+  // 에러 처리
+  pythonProcess.stderr.on('data', (data) => {
+    console.error(`stderr: ${data}`);
+  });
+
+  // Python 프로세스가 종료되면
+  pythonProcess.on('close', (code) => {
+    if (code === 0) {
+      // 출력값을 객체로 파싱
+      const parsedOutput = parsePythonOutput(output);
+
+      // 객체 형태로 리액트로 응답
+      res.json(parsedOutput);
+    } else {
+      res.status(500).send(`Python process exited with code ${code}`);
+    }
+  });
+});
+
+// Python 출력 파싱 함수
+function parsePythonOutput(output) {
+  const regex = /(\D+)\s+투자\s+금액:\s+([\d,]+)/g;
+  const result = {};
+
+  // 전체 투자 금액, rf 등의 값 추출
+  const totalRegex = /총\s+투자\s+금액\s+:\s+([\d,]+)/;
+  const rfRegex = /rf\s+:\s+([\d,]+)/;
+
+  const totalMatch = output.match(totalRegex);
+  const rfMatch = output.match(rfRegex);
+
+  if (totalMatch) result.total = parseInt(totalMatch[1].replace(',', ''));
+  if (rfMatch) result.rf = parseInt(rfMatch[1].replace(',', ''));
+
+  // 회사별 투자 금액 추출
+  let match;
+  while ((match = regex.exec(output)) !== null) {
+    const companyName = match[1].trim();
+    const investmentAmount = parseInt(match[2].replace(',', ''));
+    result[companyName] = investmentAmount;
+  }
+
+  return result;
+}
+
+
+app.get('/runPython', (req, res) => {
+  // URL에서 파라미터 추출
+  const { company1, company2, company3, totalInvestment, risk } = req.params;
+
+  if (!company1 || !company2 || !company3 || !totalInvestment || !risk) {
+    return res.status(400).send('모든 파라미터가 필요합니다.');
+  }
+
+  // Python 스크립트 실행
+  const pythonProcess = spawn('python', ['a.py', company1, company2, company3, totalInvestment, risk]);
+
+  let output = '';
+
+  // Python 스크립트 출력 처리
+  pythonProcess.stdout.on('data', (data) => {
+    output += data.toString();
+  });
+
+  // 에러 처리
+  pythonProcess.stderr.on('data', (data) => {
+    console.error(`stderr: ${data}`);
+  });
+
+  // Python 프로세스가 종료되면
+  pythonProcess.on('close', (code) => {
+    if (code === 0) {
+      // 출력값을 반환
+      res.send(output);
+    } else {
+      res.status(500).send(`Python process exited with code ${code}`);
+    }
+  });
+});
+
+
+
+
+
 
 
 app.get('/', (req, res) => {
