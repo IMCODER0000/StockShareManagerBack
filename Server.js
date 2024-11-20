@@ -245,9 +245,56 @@ app.get('/runPython', (req, res) => {
     }
   });
 });
+app.get('/api/ai/:name', (req, res) => {
+
+  const name = req.params.name;
 
 
+ 
+  let pythonProcess = spawn('python', ['samsung.py'], { cwd: './tmp' });
 
+  if(name === "SK하이닉스"){
+    console.log('하이닉스 시작');
+    pythonProcess = spawn('python', ['sk.py'], { cwd: './tmp' });
+  }
+
+ 
+
+  let output = '';
+
+  // Python 스크립트 stdout 데이터 수집
+  pythonProcess.stdout.on('data', (data) => {
+    console.log('Python Output:', data.toString());
+    output += data.toString();
+  });
+
+  // Python 스크립트 stderr 데이터 처리
+  pythonProcess.stderr.on('data', (data) => {
+    console.error(`stderr: ${data}`);
+  });
+
+  // Python 스크립트 종료 후 클라이언트에 응답
+  pythonProcess.on('close', (code) => {
+    if (code === 0) {
+      // 출력값에서 줄바꿈 등 불필요한 공백 제거
+      const trimmedOutput = output.trim();
+      console.log('Trimmed Output:', trimmedOutput);
+      
+      // 출력값이 정상적으로 숫자인지 확인
+      const price = parseFloat(trimmedOutput);
+      console.log('Parsed Price:', price);
+
+      if (isNaN(price)) {
+        res.status(500).send("가격 정보가 잘못되었습니다.");
+      } else {
+        // 가격을 JSON 형식으로 반환
+        res.json({ price });
+      }
+    } else {
+      res.status(500).send(`Python process exited with code ${code}`);
+    }
+  });
+});
 
 
 
